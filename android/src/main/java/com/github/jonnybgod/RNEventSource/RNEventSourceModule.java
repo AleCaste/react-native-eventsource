@@ -15,6 +15,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.net.URI;
 import java.net.URL;
 
+// Documentation: https://kaazing.com/doc/5.0/amqp_client_docs/apidoc/client/java/amqp/client/overview-summary.html
 import org.kaazing.net.sse.SseEventReader;
 import org.kaazing.net.sse.SseEventSource;
 import org.kaazing.net.sse.SseEventSourceFactory;
@@ -24,7 +25,31 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import android.util.Log;
+
+//import com.fasterxml.jackson.core.JsonGenerationException;
+//import com.fasterxml.jackson.databind.JsonMappingException;
+//import com.fasterxml.jackson.databind.ObjectMapper;
+
+
 public class RNEventSourceModule extends ReactContextBaseJavaModule {
+
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // JSON support
+  private static final String TAG = "RNEventSourceModule"; //"RNEventSourceModule";
+  /*
+  private ObjectMapper jsonm = new ObjectMapper();
+  private String JACKSON_mapToStr_safe(Object json_map) {
+    String returned_value = null;
+    try {
+      returned_value = jsonm.writeValueAsString(json_map);
+    } catch (Exception e) {
+      Log.e(TAG, e.toString(), e);
+    }
+    return returned_value;
+  }
+  */
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   private Map<Integer, SseEventSource> mEventSourceConnections = new HashMap<>();
   private Map<Integer, Thread> mEventReaderThreads = new HashMap<>();
@@ -53,6 +78,7 @@ public class RNEventSourceModule extends ReactContextBaseJavaModule {
     try {
 
       final SseEventSource source = factory.createEventSource(new URI(url));
+      //final SseEventSource source = factory.createEventSource(URI.create(url));
 
       source.connect();
 
@@ -70,18 +96,28 @@ public class RNEventSourceModule extends ReactContextBaseJavaModule {
             while ((type = reader.next()) != SseEventType.EOS) {
               switch (type) {
                 case DATA:
-                  String message;
+                  String name;
+                  String data;
                   try {
-                    message = reader.getData().toString();
+                    name = reader.getName();
+//Log.i("Alex","  [RNEventSourceModule/connect] - data:"+JACKSON_mapToStr_safe(reader.getData()));                    
+                    data = reader.getData().toString();
+//Log.i("Alex","  [RNEventSourceModule/connect] - data 1:"+data);
                   } catch (IOException e) {
+//Log.i("Alex","  [RNEventSourceModule/connect] - ERROR 1:"+e.getMessage());
                     notifyEventSourceFailed(id, e.getMessage());
                     return;
                   }
 
+                  // Send event to React Native
                   WritableMap params = Arguments.createMap();
                   params.putInt("id", id);
-                  params.putString("message", message);
-                  sendEvent("eventsourceMessage", params);
+                  params.putString("type", name!=null ? name : "message");
+                  params.putString("data", data);
+//Log.i("Alex","  [RNEventSourceModule/connect] - data 2:"+data);
+//Log.i("Alex","  [RNEventSourceModule/connect] - params:"+params);                  
+                  sendEvent("eventsourceEvent", params);
+                  
                   break;
                 case EMPTY:
                   break;
@@ -92,6 +128,7 @@ public class RNEventSourceModule extends ReactContextBaseJavaModule {
             close(id);
           }
           catch (Exception e) {
+//Log.i("Alex","  [RNEventSourceModule/connect] - ERROR 2:"+e.getMessage());            
             notifyEventSourceFailed(id, e.getMessage());
 
             Thread.currentThread().interrupt();

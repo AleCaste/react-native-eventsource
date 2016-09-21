@@ -17,8 +17,25 @@ android {
 
 repositories {
     mavenCentral()
+    maven {
+      url "https://repository.kaazing.com/maven/"
+    }    
 }
 
 dependencies {
     compile "com.facebook.react:react-native:0.17.+"
+    
+    // org.kaazing  JMS
+    // See: https://mvnrepository.com/artifact/org.kaazing/gateway.client.java
+    // See: https://mvnrepository.com/artifact/org.kaazing/gateway.client.java.bridge
+    // See: https://mvnrepository.com/artifact/org.kaazing/net.api
+    
+    //compile 'com.kaazing:enterprise.android.client.all:4.1.0'  // NOTE: this lib cannot be found in MAVEN!!! So we needed to download it manually and add it locally in the ./libs folder!
+    //compile files('libs/com.kaazing.gateway.client.android-4.2.4.jar')
+    //compile files('libs/com.kaazing.gateway.jms.client.android-4.2.3.jar')
+    
+    // JACKSON json parser
+    //compile 'com.fasterxml.jackson.core:jackson-core:2.4.1'
+    //compile 'com.fasterxml.jackson.core:jackson-annotations:2.4.1'
+    //compile 'com.fasterxml.jackson.core:jackson-databind:2.4.1'
 }

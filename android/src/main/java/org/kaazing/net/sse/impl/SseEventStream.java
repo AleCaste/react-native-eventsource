@@ -43,10 +43,49 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import android.util.Log;
+
 /**
  * ServerSentEvent stream implementation.
  */
 public class SseEventStream {
+  
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  private static String java_escape_string(String s) {
+    // NOTE: you may also use org.apache.commons.lang.StringEscapeUtils.escapeJava(s);
+    // ... from Apache Commons Lang  (https://commons.apache.org/proper/commons-lang/download_lang.cgi)
+    if (s==null)  return "null";
+    StringBuilder sb = new StringBuilder();
+    char ch = 'a';
+    Integer ls = null; try { ls = s.length(); } catch (Exception e) { ls = 0; }
+    for (int i=0; i<ls; i++) {
+      try {
+        ch = s.charAt(i);
+        switch (ch){
+          case '\b': sb.append("\\b"); break;             /* \u0008: backspace (BS) */
+          case '\t': sb.append("\\t"); break;             /* \u0009: horizontal tab (HT) */
+          case '\n': sb.append("\\n"); break;             /* \u000a: linefeed (LF) */
+          case '\f': sb.append("\\f"); break;             /* \u000c: form feed (FF) */
+          case '\r': sb.append("\\r"); break;             /* \u000d: carriage return (CR) */
+          case '\"': sb.append("\\\""); break;             /* \u0022: double quote (") */
+          case '\'': sb.append("\\'"); break;             /* \u0027: single quote (') */
+          case '\\': sb.append("\\\\"); break;            /* \u005c: backslash (\) */      
+          // ... rest of escape characters
+          // \U{0000-FFFF}     Unicode [Basic Multilingual Plane only, see below] hex value 
+          //                   does not handle unicode values higher than 0xFFFF (65535),
+          //                   the high surrogate has to be separate: \uD852\uDF62
+          //                   Four hex characters only (no variable width)
+          // \{0-377}          \u0000 to \u00ff: from octal value 
+          //                   1 to 3 octal digits (variable width)
+          default: sb.append(ch);
+        }
+      } catch (Exception e) { }
+    }
+    return sb.toString();
+  }  
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  
     private static final String  MESSAGE = "message";
     private static final String  CLASS_NAME = SseEventStream.class.getName();
     private static final Logger  LOG = Logger.getLogger(CLASS_NAME);
@@ -118,6 +157,10 @@ public class SseEventStream {
         try {
             HttpURI uri = new HttpURI(this.sseLocation);
             sseSource = new HttpRequest(Method.GET, uri, true);
+              // See: https://github.com/remy/polyfills/blob/master/EventSource.js
+              sseSource.setHeader("Accept", "text/event-stream");  // VERY IMPORTANT FOR CERTAN SERVERS!!! Otherwise they might respond with 405 status!!
+              sseSource.setHeader("Cache-Control", "no-cache");
+              sseSource.setHeader("X-Requested-With", "XMLHttpRequest");
             sseHandler.processOpen(sseSource);
 
             if (!reconnected.get()) {
@@ -182,10 +225,13 @@ public class SseEventStream {
     }
 
     private synchronized void processProgressEvent(String message) {
-        LOG.entering(CLASS_NAME, "processProgressEvent", message);
+        //android.util.Log.i(CLASS_NAME, "[processProgressEvent] - message:"+java_escape_string(message));
+        
         String line;
         try {
+            //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -   messageBuffer 1:"+java_escape_string(messageBuffer));
             messageBuffer = messageBuffer + message;
+            //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -   messageBuffer 2:"+java_escape_string(messageBuffer));
             String field = null;
             String value = null;
             String name = MESSAGE;
@@ -193,17 +239,20 @@ public class SseEventStream {
             immediateReconnect = false;
             while (!aborted && !errored) {
                 line = fetchLineFromBuffer();
+                //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -   line:"+java_escape_string(line));
                 if (line == null) {
                     break;
                 }
 
                 if (line.length() == 0 && dataBuffer.length() > 0) {
+                    //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     dataBuffer (to be sent):"+java_escape_string(dataBuffer.toString()));
                     synchronized (dataBuffer) {
                         int dataBufferlength = dataBuffer.length();
                         if (dataBuffer.charAt(dataBufferlength - 1) == '\n') {
                             dataBuffer.replace(dataBufferlength - 1, dataBufferlength, "");
                         }
                         doMessage(name, dataBuffer.toString());
+                        //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     dataBuffer (sent):"+java_escape_string(dataBuffer.toString()));
                         dataBuffer.setLength(0);
                     }
                 }
@@ -224,6 +273,8 @@ public class SseEventStream {
                     }
                     value = line.substring(valueAt);
                 }
+                //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     field:"+field);
+                //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     value:"+java_escape_string(value));
                 // process the field of completed event
                 if (field.equals("event")) {
                     name = value;
@@ -233,8 +284,10 @@ public class SseEventStream {
                     retry = Integer.parseInt(value);
                 } else if (field.equals("data")) {
                     // deliver event if data is specified and non-empty, or name is specified and not "message"
+                    //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     Is data message!");
                     if (value != null || (name != null && name.length() > 0 && !MESSAGE.equals(name))) {
                         dataBuffer.append(value).append("\n");
+                        //android.util.Log.i(CLASS_NAME, "[processProgressEvent] -     dataBuffer (so far):"+java_escape_string(dataBuffer.toString()));
                     }
                 } else if (field.equals("location")) {
                     if (value != null && value.length() > 0) {
@@ -256,17 +309,36 @@ public class SseEventStream {
     }
 
     private String fetchLineFromBuffer() {
-        LOG.entering(CLASS_NAME, "fetchLineFromBuffer");
-        int lf = this.messageBuffer.indexOf("\n");
-        if (lf == -1) {
-            lf = this.messageBuffer.indexOf("\r");
-        }
-        if (lf != -1) {
-            String ret = messageBuffer.substring(0, lf);
-            messageBuffer = messageBuffer.substring(lf + 1);
-            return ret;
-        }
-        return null;
+      //android.util.Log.i(CLASS_NAME, "[fetchLineFromBuffer] - "+java_escape_string(this.messageBuffer.toString()));
+      String ret = null;
+      String s = this.messageBuffer;
+      if (s==null || s=="")  return ret;
+      StringBuilder sb = new StringBuilder();
+      boolean line_started = false;
+      int ls  = -1; try { ls = s.length(); } catch (Exception e) { ls = 0; }
+      int ito = -1;
+      char ch = 'a';
+      go_through_string: for (int i=0; i<ls; i++) {
+        try {
+          ch = s.charAt(i);
+          if (line_started==false) {
+            if (Character.isWhitespace(ch)==false)  { line_started = true; sb.append(ch); }
+          } else {
+            switch (ch){
+              case '\r': case '\n':  ito = i; break go_through_string;
+              default: sb.append(ch);
+            }
+          }
+        } catch (Exception e) { }
+      }
+      ret = sb.toString();
+      if (ito!=-1)  {
+        //sb = new StringBuilder();
+        //for (i=ito+1; i<ls; i++)   sb.append( s.charAt(i) );
+        //messageBuffer = sb.toString();
+        this.messageBuffer = s.substring(ito + 1);
+      } else this.messageBuffer = "";
+      return ret;
     }
 
     private class EventStreamHttpRequestListener implements HttpRequestListener {
